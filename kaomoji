@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Description: A Kaomoji picker utility using vmenu that allows copying or typing Japanese emoticons.
+# Description: A kaomoji picker utility using vmenu that allows copying or typing kaomojis.
 
 # Cache configuration
 CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/vmenu"
@@ -12,14 +12,14 @@ NO_NOTIFY=1
 # Help message
 show_help() {
     cat <<EOF
-Usage: vmenu_kaomoji [options] [-- [vmenu options]]
+Usage: kaomoji [options] [-- [vmenu options]]
 
-An Kaomoji picker script using vmenu.
+A kaomoji picker script using vmenu.
 
 Options:
-  -u, --update      Download and update the local Kaomoji database.
-  -t, --type        Type the selected Kaomoji directly using xdotool/wtype instead of copying.
-  -c, --copy        Copy the selected Kaomoji to clipboard (default).
+  -u, --update      Re-initialize the local kaomoji database.
+  -t, --type        Type the selected kaomoji directly using xdotool/wtype instead of copying.
+  -c, --copy        Copy the selected kaomoji to clipboard (default).
   -n, --notify      Show a desktop notification after selection.
   -h, --help        Show this help message.
 
@@ -27,59 +27,191 @@ Any options after -- are passed directly to vmenu.
 EOF
 }
 
-# Download and parse Kaomojis from crllect/Kaomoji-Dump markdown database
-download_kaomojis() {
-    local url="https://raw.githubusercontent.com/crllect/Kaomoji-Dump/main/kaomojis_markdown%20(2).md"
+# Generate kaomojis and save to the cache file
+update_kaomojis() {
     local temp_file
     temp_file=$(mktemp)
 
-    echo "Downloading and parsing Kaomojis..." >&2
+    echo "Generating kaomoji database..." >&2
 
-    if command -v curl >/dev/null 2>&1; then
-        curl -sSL "$url" -o "$temp_file"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO "$temp_file" "$url"
-    else
-        echo "Error: curl or wget is required to download Kaomojis." >&2
-        rm -f "$temp_file"
-        return 1
-    fi
-
-    if [[ ! -s "$temp_file" ]]; then
-        echo "Error: Failed to download Kaomoji database (empty file)." >&2
-        rm -f "$temp_file"
-        return 1
-    fi
-
-    # Parse and save to the cache file (format: kaomoji <space> │ <space> category)
-    mkdir -p "$(dirname "$CACHE_FILE")"
-    python3 - "$temp_file" "$CACHE_FILE" <<'EOF'
-import sys
-temp_path = sys.argv[1]
-cache_path = sys.argv[2]
-
-current_category = "Unknown"
-with open(temp_path, "r", encoding="utf-8") as infile, open(cache_path, "w", encoding="utf-8") as outfile:
-    for line in infile:
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("#"):
-            current_category = line.lstrip("#").strip()
-        elif "`" in line:
-            start = line.find("`")
-            end = line.rfind("`")
-            if start != -1 and end != -1 and start < end:
-                kaomoji = line[start+1:end]
-                outfile.write(f"{kaomoji} │ {current_category}\n")
+    # We parse the raw database and format it as: <Kaomoji> │ [<Category>] <Description>
+    while IFS='|' read -r category kaomoji description || [[ -n "$category" ]]; do
+        # Skip empty lines or comments
+        [[ -z "$category" || "$category" =~ ^[[:space:]]*# ]] && continue
+        echo "$kaomoji │ [$category] $description"
+    done <<'EOF' > "$temp_file"
+Joy|(*^ω^*)|Joyful smile
+Joy|(＾▽＾)|Happy open mouth
+Joy|(o^▽^o)|Delighted grin
+Joy|(≧◡≦)|Super happy closed eyes
+Joy|(⌒▽⌒)|Cheerful grin
+Joy|(°▽°)|Happy surprise
+Joy|(〃＾▽＾〃)|Blush and laugh
+Joy|(★ω★)|Starry eyes happy
+Joy|(๑˃ᴗ˂)|Cute excited
+Joy|( ˙꒳​˙ )|Content smile
+Joy|(๑˘ᵕ˘)ﾞ|Peaceful happy
+Joy|(〃´∀｀)|Warm happy blush
+Joy|( ^ω^ )|Cat-like happy smile
+Joy|(*￣▽￣*)|Smug happy
+Joy|(*≧ω≦*)|Excited squinting joy
+Joy|(☆ω☆)|Sparkle happy eyes
+Joy|o(≧▽≦)o|Raising hands in joy
+Joy|(っ˘ω˘ς)|Soft happy cuddling
+Joy|(っ.❛ ᴗ ❛.)っ|Hugging happy
+Joy|(☆▽☆)|Excited starry smile
+Joy|(o^^o)|Shy happy grin
+Joy|( ´ ▽ ` )|Relaxed happy smile
+Joy|(￣▽￣)|Casual smile
+Joy|(｀∀´)Ψ|Devilish grin
+Joy|(o´▽`o)|Gentle warm smile
+Joy|(¯◡¯)|Content closed eyes
+Joy|(*~▽~*)|Winking happy
+Joy|(◕‿◕)|Cute smile face
+Love|(♡°▽°♡)|Heart eyes happy
+Love|(｡♥‿♥｡)|Heart eyes sweet
+Love|(ღ˘⌣˘ღ)|Peaceful love
+Love|(っ˘з(˘⌣˘ )|Kiss on the cheek
+Love|(♡μ_μ)|Shy kiss
+Love|(*♡∀♡)|Infatuated heart eyes
+Love|( ˘ ³˘)♥|Blowing a kiss
+Love|(´｡• ᵕ •｡`) ♡|Cute blushing love
+Love|(｡・//ε//・｡)|Heavy blush kiss
+Love|(♡-_-♡)|Loving but quiet
+Love|( ´∀｀)ノ～ ♡|Sending love wave
+Love|( ′ l ‵ )|Shy couple
+Love|(ღ˘⌣˘)♥(˘⌣˘ღ)|Loving couple hugging
+Love|(♡‿♡)|Big heart eyes
+Love|(*^^*)♡|Blushing love smile
+Sad|(;ω;)|Tearful eyes
+Sad|(ㄒoㄒ)|Loud crying
+Sad|(ToT)|Simple crying
+Sad|(╥_╥)|Stream of tears
+Sad|(；ω；)|Crying sad
+Sad|(ಥ﹏ಥ)|Crying holding back tears
+Sad|(っ˘̩╭╮˘̩)っ|Crying hugging
+Sad|(╯_╰)|Disappointed face down
+Sad|(╯︵╰,)|Downcast frowning
+Sad|( ´╥ω╥｀)|Pouting teary eyes
+Sad|(ノ_<。)|Wiping tears
+Sad|( ; _ ; )|Quiet crying
+Sad|(・_・、)|Tear drop
+Sad|(；⌣；)|Disappointed sad smile
+Sad|(っω；==)|Wiping tears with sleeve
+Sad|(ಥ_ಥ)|Staring tears
+Sad|(ノ﹏ヽ)|Hiding face crying
+Sad|( ；´Д｀)|Distressed crying
+Sad|(︶︹︺)|Frowning sad
+Anger|(♯｀∧´)|Angry pouting
+Anger|(；￣Д￣)|Dissatisfied frown
+Anger|(｀皿´)＃|Gritting teeth in anger
+Anger|(怒｀Д´怒)|Double angry rage
+Anger|(＃｀Д´)|Angry shout
+Anger|(　｀_ゝ´)|Disdainful look
+Anger|( *｀ω´)|Hmph angry cat
+Anger|(ಠ_ಠ)|Look of disapproval
+Anger|(¬_¬)|Sidelong glare
+Anger|(ง ͠° ͟ل͜ ͡°)ง|Want to fight / lenny angry
+Anger|(╬ಠ益ಠ)|Extreme rage grimace
+Anger|(凸ಠ益ಠ)凸|Flipping double birds in rage
+Anger|(ノಠ益ಠ)ノ|Throwing hands up in anger
+Anger|(。-`ω´-)|Determined annoyed look
+Anger|( -_・)|Skeptical glare
+Anger|(＠´＿｀＠)|Sulking face
+Action|(╯°□°）╯︵ ┻━┻|Table flip / angry throw
+Action|┬─┬ノ( º _ ºノ)|Putting table back nicely
+Action|(ノ_ _)ノ|Faceplant / falling over
+Action|( o^ ^)o|Cheering dance
+Action|(っ•ᴗ•)っ|Hug offer
+Action|(^-^*)/|Friendly wave hello
+Action|( ´ ▽ ` )ﾉ|Casual wave hello
+Action|(￣▽￣)ノ|Casual wave bye
+Action|( ﾟ∀ﾟ)o彡|Pumping fist in excitement
+Action|(シ. .)シ|Bowing down respectfully
+Action|ε=ε=┌(;￣▽￣)┘|Running away in panic
+Action|(=^･ω･^=)ﾉ|Cat wave hello
+Action|(づ｡◕‿‿◕｡)づ|Gimme hug
+Action|(づ￣ ³￣)づ|Kissy hug
+Action|＼(￣▽￣)／|Hurrah hands up
+Action|(っ.❛ ᴗ ❛.)っ|Giving a hug
+Action|ᕙ(⇀‸↼‶)ᕗ|Flexing muscles / showing strength
+Action|(＃￣□￣)o|Punching in anger
+Action|ヘ(>_<ヘ)|Crawling away in fear
+Surprise|(ﾟωﾟ;)|Shocked sweat
+Surprise|(⊙_⊙)|Wide-eyed surprise
+Surprise|(ﾟДﾟ?)|Dumbfounded questioning
+Surprise|(o_O)|Raised eyebrow confusion
+Surprise|( ﾟ_ﾟ)|Staring blankly in shock
+Surprise|( ’o’ )|Small gasp surprise
+Surprise|(゜Д゜;)|Gaping mouth shock
+Surprise|w(°ｏ°)w|Raising hands in shock
+Surprise|(╹▽╹)|Blank stare smile
+Surprise|(・_・)|Staring blankly
+Surprise|(◎◎)|Dizzy eyes shock
+Surprise|(・.・;)|Nervous sweat drop
+Surprise|(๑• . •๑)?|Confused questioning face
+Surprise|(⊙_⊙;)|Worried sweat shock
+Surprise|(⊙x⊙)|Speechless mouth crossed
+Shrug|¯\_(ツ)_/¯|Shrug / whatever
+Shrug|┐(‘～`;)┌|Shrugging confusion
+Shrug|┐(￣∀￣)┌|Shrugging happy shrug
+Shrug|┐(￣ヘ￣)┌|Dismissive shrug
+Shrug|(￣_￣)|Bored stare
+Shrug|(￣ー￣)|Smirk / poker face
+Shrug|(一一)|Squinting indifference
+Shrug|(；一_一)|Sighing annoyance
+Shrug|(ーー;)|Troubled sigh
+Shrug|( -_ -)|Sleeping / expressionless
+Shrug|( ﾟ，_ゝﾟ)|Sneering look
+Shrug|(￣︿￣)|Displeased look
+Animal|(=^･ω･^=)|Cat face cute
+Animal|(=^･ｪ･^=)|Cat face whiskers
+Animal|(=^‥^=)|Cat face small
+Animal|(ﾐ^･┬･^ﾐ)|Cat face detailed
+Animal|( ´(oo)｀)|Pig face snout
+Animal|(￣(oo)￣)|Pig face big snout
+Animal|(・θ・)|Bird chick beak
+Animal|(•∋•)|Duck face
+Animal|（・⊝・）|Penguin face
+Animal|(^._.^)ﾉ|Cat paw wave
+Animal|( ⊙ o ⊙ )|Cute owl eyes
+Animal|(◕ᴥ◕)|Bear face cute
+Animal|(￣(ｴ)￣)|Bear face wild
+Animal|ʕ·ᴥ·ʔ|Teddy bear face
+Animal|ʕ•ᴥ•ʔ|Cute bear face
+Animal|(*￣(ｴ)￣*)|Blushing bear face
+Animal|(=①ω①=)|Cat eyes wide
+Animal|∪･ω･∪|Dog face cute
+Animal|V●ᴥ●V|Dog face long ears
+Animal|(U・x・U)|Bunny/dog face ears up
+Shy|(o^ ^o)|Shy happy blush
+Shy|(*/_＼*)|Covering eyes shy
+Shy|( 〃▽〃)|Blushing happy smile
+Shy|(｡-_-｡)|Quiet blushing
+Shy|(*/▽＼*)|Peeking shyly
+Shy|(〃ー〃)|Blushing smile
+Shy|(˵¯͒〰¯͒˵)|Extremely cute blushing
+Shy|(⁄ ⁄•⁄ω⁄•⁄ ⁄)|Total blush embarrassment
+Shy|(*/ω＼*)|Hiding blushing face
+Worry|(；′⌒\)|Worried frown
+Worry|(ノ_＼)|Hiding eyes in fear
+Worry|( >_< )|Cringing pain/fear
+Worry|(｡_｡)|Ashamed head down
+Worry|(((＞＜)))|Shivering in fear
+Worry|(;﹏;)|Worried teary
+Worry|(＃＞＜)|Gritting teeth in worry
+Worry|(*/_＼)|Peeking through fingers
+Worry|(・_·;)|Nervous sweat
 EOF
 
-    rm -f "$temp_file"
-
-    if [[ ! -s "$CACHE_FILE" ]]; then
-        echo "Error: Failed to parse Kaomojis or output is empty." >&2
+    if [[ ! -s "$temp_file" ]]; then
+        echo "Error: Failed to generate kaomoji database (empty output)." >&2
+        rm -f "$temp_file"
         return 1
     fi
+
+    mkdir -p "$(dirname "$CACHE_FILE")"
+    mv "$temp_file" "$CACHE_FILE"
 
     echo "Kaomoji database updated successfully at $CACHE_FILE" >&2
     return 0
@@ -94,7 +226,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -u|--update)
-            download_kaomojis
+            update_kaomojis
             exit $?
             ;;
         -t|--type)
@@ -121,11 +253,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if cache file exists and has the correct format, if not download it
-if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]] || ! grep -q ' │ ' "$CACHE_FILE"; then
-    download_kaomojis
+# Check if cache file exists, if not generate it
+if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]]; then
+    update_kaomojis
     if [[ $? -ne 0 ]]; then
-        echo "Error: Local Kaomoji database is missing and download failed." >&2
+        echo "Error: Local kaomoji database is missing and generation failed." >&2
         exit 1
     fi
 fi
@@ -145,7 +277,7 @@ else
     VMENU_CMD="vmenu"
 fi
 
-# Run vmenu with the Kaomoji list
+# Run vmenu with the kaomoji list
 # If no prompt is specified in VMENU_ARGS, add a default prompt
 HAS_PROMPT=0
 for arg in "${VMENU_ARGS[@]}"; do
@@ -159,17 +291,17 @@ if [[ $HAS_PROMPT -eq 0 ]]; then
     VMENU_ARGS+=("-p" "Kaomoji:")
 fi
 
-# Default layout: centered menu with 10 lines and 5 columns (grid)
+# Default layout: centered menu with 20 lines (grid is not used since descriptions are detailed)
 HAS_LAYOUT=0
 for arg in "${VMENU_ARGS[@]}"; do
-    if [[ "$arg" == "-c" || "$arg" == "--centered" || "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
+    if [[ "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
         HAS_LAYOUT=1
         break
     fi
 done
 
 if [[ $HAS_LAYOUT -eq 0 ]]; then
-    VMENU_ARGS+=("-c" "-l" "10" "-G" "5")
+    VMENU_ARGS+=("-l" "20")
 fi
 
 copy_to_clipboard() {
@@ -187,14 +319,14 @@ copy_to_clipboard() {
     fi
 }
 
-type_emoji() {
+type_kaomoji() {
     local val="$1"
     if command -v xdotool >/dev/null 2>&1; then
         xdotool type --delay 100 "$val"
     elif command -v wtype >/dev/null 2>&1; then
         wtype "$val"
     else
-        echo "Warning: xdotool or wtype not found. Cannot type Kaomoji." >&2
+        echo "Warning: xdotool or wtype not found. Cannot type kaomoji." >&2
         return 1
     fi
 }
@@ -207,7 +339,7 @@ if [[ -z "$SELECTED" ]]; then
     exit 0
 fi
 
-# Extract only the Kaomoji (everything before ' │ ')
+# Extract only the kaomoji (everything before the ' │ ' delimiter)
 KAOMOJI="${SELECTED%% │ *}"
 
 if [[ -z "$KAOMOJI" ]]; then
@@ -222,5 +354,5 @@ if [[ "$ACTION" == "copy" ]]; then
         fi
     fi
 else
-    type_emoji "$KAOMOJI"
+    type_kaomoji "$KAOMOJI"
 fi
