@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Description: Download and save applications using command templates defined in an array.
 
 # Exit on error, undefined variable, or pipeline failure
 set -euo pipefail

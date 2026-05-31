@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# Description: A unified archive manager to easily compress and extract zip, tar, rar, 7z, and more.
+
+# Exit on error or pipeline failure
+set -euo pipefail
+
+# Display usage instructions
+usage() {
+    echo "Usage:"
+    echo "  archiver extract <archive-file> [destination-directory]"
+    echo "  archiver create  <archive-file> <file-or-directory> [additional-files...]"
+    echo ""
+    echo "Aliases:"
+    echo "  extract: ex, x"
+    echo "  create:  c"
+    echo ""
+    echo "Supported formats:"
+    echo "  tar, tar.gz, tgz, tar.bz2, tbz2, tar.xz, txz, zip, rar, 7z, gz, bz2, xz"
+    exit 1
+}
+
+# Ensure at least two arguments are provided
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+ACTION="$1"
+shift
+
+# Check if a command is available on the system
+check_cmd() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "Error: '$1' is required but not installed." >&2
+        exit 1
+    fi
+}
+
+# Extract an existing archive
+extract_archive() {
+    local archive="$1"
+    local dest="${2:-.}"
+
+    if [ ! -f "$archive" ]; then
+        echo "Error: Archive file '$archive' does not exist." >&2
+        exit 1
+    fi
+
+    # Create destination directory if it doesn't exist
+    if [ "$dest" != "." ]; then
+        mkdir -p "$dest"
+    fi
+
+    # Get absolute path of the archive
+    local abs_archive
+    abs_archive=$(realpath "$archive")
+
+    # Parse extensions
+    local filename
+    filename=$(basename "$archive")
+    local ext="${filename##*.}"
+    ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+
+    # Look for compound extensions (e.g. tar.gz)
+    local base="${filename%.*}"
+    local double_ext=""
+    if [[ "$base" == *.* ]]; then
+        double_ext="${base##*.}.$ext"
+        double_ext=$(echo "$double_ext" | tr '[:upper:]' '[:lower:]')
+    fi
+
+    # Determine final extension to use
+    local format="$ext"
+    if [[ "$double_ext" == "tar.gz" || "$double_ext" == "tar.bz2" || "$double_ext" == "tar.xz" ]]; then
+        format="$double_ext"
+    fi
+
+    echo "Extracting '$archive' to '$dest' using '$format' format..."
+
+    case "$format" in
+        tar.gz|tgz)
+            check_cmd tar
+            tar -C "$dest" -xzf "$abs_archive"
+            ;;
+        tar.bz2|tbz2)
+            check_cmd tar
+            tar -C "$dest" -xjf "$abs_archive"
+            ;;
+        tar.xz|txz)
+            check_cmd tar
+            tar -C "$dest" -xJf "$abs_archive"
+            ;;
+        tar)
+            check_cmd tar
+            tar -C "$dest" -xf "$abs_archive"
+            ;;
+        zip|jar|war)
+            check_cmd unzip
+            unzip -d "$dest" "$abs_archive"
+            ;;
+        rar)
+            check_cmd unrar
+            if [ "$dest" != "." ]; then
+                (cd "$dest" && unrar x "$abs_archive")
+            else
+                unrar x "$abs_archive"
+            fi
+            ;;
+        7z)
+            check_cmd 7z
+            7z x "-o$dest" "$abs_archive"
+            ;;
+        gz)
+            check_cmd gunzip
+            if [ "$dest" != "." ]; then
+                gunzip -c "$abs_archive" > "$dest/${base}"
+            else
+                gunzip "$abs_archive"
+            fi
+            ;;
+        bz2)
+            check_cmd bunzip2
+            if [ "$dest" != "." ]; then
+                bunzip2 -c "$abs_archive" > "$dest/${base}"
+            else
+                bunzip2 "$abs_archive"
+            fi
+            ;;
+        xz)
+            check_cmd unxz
+            if [ "$dest" != "." ]; then
+                unxz -c "$abs_archive" > "$dest/${base}"
+            else
+                unxz "$abs_archive"
+            fi
+            ;;
+        *)
+            echo "Error: Unknown or unsupported archive format: $format" >&2
+            exit 1
+            ;;
+    esac
+
+    echo "Success: Extraction complete."
+}
+
+# Create a new archive
+create_archive() {
+    local archive="$1"
+    shift
+    local targets=("$@")
+
+    if [ ${#targets[@]} -eq 0 ]; then
+        echo "Error: No files or directories specified to archive." >&2
+        exit 1
+    fi
+
+    # Parse extensions
+    local filename
+    filename=$(basename "$archive")
+    local ext="${filename##*.}"
+    ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+
+    # Look for compound extensions (e.g. tar.gz)
+    local base="${filename%.*}"
+    local double_ext=""
+    if [[ "$base" == *.* ]]; then
+        double_ext="${base##*.}.$ext"
+        double_ext=$(echo "$double_ext" | tr '[:upper:]' '[:lower:]')
+    fi
+
+    # Determine final extension to use
+    local format="$ext"
+    if [[ "$double_ext" == "tar.gz" || "$double_ext" == "tar.bz2" || "$double_ext" == "tar.xz" ]]; then
+        format="$double_ext"
+    fi
+
+    echo "Creating archive '$archive' from: ${targets[*]}..."
+
+    case "$format" in
+        tar.gz|tgz)
+            check_cmd tar
+            tar -czf "$archive" "${targets[@]}"
+            ;;
+        tar.bz2|tbz2)
+            check_cmd tar
+            tar -cjf "$archive" "${targets[@]}"
+            ;;
+        tar.xz|txz)
+            check_cmd tar
+            tar -cJf "$archive" "${targets[@]}"
+            ;;
+        tar)
+            check_cmd tar
+            tar -cf "$archive" "${targets[@]}"
+            ;;
+        zip)
+            check_cmd zip
+            zip -r "$archive" "${targets[@]}"
+            ;;
+        rar)
+            check_cmd rar
+            rar a -r "$archive" "${targets[@]}"
+            ;;
+        7z)
+            check_cmd 7z
+            7z a "$archive" "${targets[@]}"
+            ;;
+        gz)
+            if [ ${#targets[@]} -gt 1 ]; then
+                echo "Error: gzip format only supports compressing a single file." >&2
+                exit 1
+            fi
+            check_cmd gzip
+            gzip -c "${targets[0]}" > "$archive"
+            ;;
+        bz2)
+            if [ ${#targets[@]} -gt 1 ]; then
+                echo "Error: bzip2 format only supports compressing a single file." >&2
+                exit 1
+            fi
+            check_cmd bzip2
+            bzip2 -c "${targets[0]}" > "$archive"
+            ;;
+        xz)
+            if [ ${#targets[@]} -gt 1 ]; then
+                echo "Error: xz format only supports compressing a single file." >&2
+                exit 1
+            fi
+            check_cmd xz
+            xz -c "${targets[0]}" > "$archive"
+            ;;
+        *)
+            echo "Error: Unknown or unsupported archive format: $format" >&2
+            exit 1
+            ;;
+    esac
+
+    echo "Success: Archive created successfully."
+}
+
+# Main execution dispatch
+case "$ACTION" in
+    extract|ex|x)
+        extract_archive "$@"
+        ;;
+    create|c)
+        create_archive "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac

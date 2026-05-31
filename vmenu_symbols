@@ -1,1 +1,298 @@
-/home/ramen/Applications/vmenu/scripts/vmenu_symbols
+#!/usr/bin/env bash
+# Description: A Unicode character and symbol picker utility using vmenu.
+
+# Cache configuration
+CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/vmenu"
+CACHE_FILE="$CACHE_DIR/symbols.txt"
+
+# Default options
+ACTION="copy" # copy or type
+NO_NOTIFY=0
+
+# Help message
+show_help() {
+    cat <<EOF
+Usage: vmenu_symbols [options] [-- [vmenu options]]
+
+A Unicode character and symbol picker script using vmenu.
+
+Options:
+  -u, --update      Download and update the local symbols database.
+  -t, --type        Type the selected symbol directly using xdotool/wtype instead of copying.
+  -c, --copy        Copy the selected symbol to clipboard (default).
+  -n, --no-notify   Do not show a desktop notification after selection.
+  -h, --help        Show this help message.
+
+Any options after -- are passed directly to vmenu.
+EOF
+}
+
+# Download and parse UnicodeData.txt
+download_symbols() {
+    python3 - "$CACHE_FILE" <<'EOF'
+import sys
+import os
+import urllib.request
+
+cache_file = sys.argv[1]
+url = "https://www.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt"
+
+ranges = [
+    # (Start_Hex, End_Hex, Category_Name)
+    (0x2200, 0x22FF, "Maths symbols"),
+    (0x27C0, 0x27EF, "Maths symbols"),
+    (0x2980, 0x29FF, "Maths symbols"),
+    (0x2A00, 0x2AFF, "Maths symbols"),
+    (0x20A0, 0x20CF, "Currency Symbols"),
+    (0x2500, 0x257F, "Box-drawing"),
+    (0x2190, 0x21FF, "Arrows"),
+    (0x27F0, 0x27FF, "Arrows"),
+    (0x2900, 0x297F, "Arrows"),
+    (0x2070, 0x209F, "Superscripts and Subscripts"),
+    (0x2000, 0x206F, "General Punctuation"),
+    (0x00A0, 0x00FF, "Latin-1 supplement & Latin Extended A-B-Additional"),
+    (0x0100, 0x017F, "Latin-1 supplement & Latin Extended A-B-Additional"),
+    (0x0180, 0x024F, "Latin-1 supplement & Latin Extended A-B-Additional"),
+    (0x1E00, 0x1EFF, "Latin-1 supplement & Latin Extended A-B-Additional"),
+    (0x0370, 0x03FF, "Greek"),
+    (0x1F00, 0x1FFF, "Greek Extended and Coptic"),
+    (0x2C80, 0x2CFF, "Greek Extended and Coptic"),
+    (0x02B0, 0x02FF, "Spacing Modifier Letters"),
+    (0x0400, 0x04FF, "Cyrillic"),
+    (0x0500, 0x052F, "Cyrillic"),
+    (0x2150, 0x218F, "Number Forms"),
+    (0x2300, 0x23FF, "Miscellaneous Technical"),
+    (0x25A0, 0x25FF, "Geometric Shapes"),
+    (0x2600, 0x26FF, "Miscellaneous Symbols")
+]
+
+print("Downloading UnicodeData.txt from unicode.org...", file=sys.stderr)
+try:
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req) as response:
+        content = response.read().decode('utf-8')
+except Exception as e:
+    print(f"Error downloading: {e}", file=sys.stderr)
+    sys.exit(1)
+
+print("Parsing Unicode symbols...", file=sys.stderr)
+os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+try:
+    with open(cache_file, 'w', encoding='utf-8') as out:
+        for line in content.splitlines():
+            parts = line.strip().split(';')
+            if len(parts) < 2:
+                continue
+            cp_str = parts[0]
+            name = parts[1]
+            if name.startswith('<'):
+                continue
+            cp = int(cp_str, 16)
+            for start, end, cat in ranges:
+                if start <= cp <= end:
+                    try:
+                        char = chr(cp)
+                        out.write(f"{cat}|{char}|{name}\n")
+                    except Exception:
+                        pass
+                    break
+    print(f"Symbols database updated successfully at {cache_file}", file=sys.stderr)
+except Exception as e:
+    print(f"Error writing file: {e}", file=sys.stderr)
+    sys.exit(1)
+EOF
+}
+
+# Parse command-line options
+VMENU_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -u|--update)
+            download_symbols
+            exit $?
+            ;;
+        -t|--type)
+            ACTION="type"
+            shift
+            ;;
+        -c|--copy)
+            ACTION="copy"
+            shift
+            ;;
+        -n|--no-notify)
+            NO_NOTIFY=1
+            shift
+            ;;
+        --)
+            shift
+            VMENU_ARGS+=("$@")
+            break
+            ;;
+        *)
+            VMENU_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Check if cache file exists, if not download it
+if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]]; then
+    download_symbols
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Local symbols database is missing and download failed." >&2
+        exit 1
+    fi
+fi
+
+# Check if vmenu is installed or in PATH; otherwise look in relative locations
+if command -v vmenu >/dev/null 2>&1; then
+    VMENU_CMD="vmenu"
+elif [[ -x "$(dirname "$0")/vmenu" ]]; then
+    VMENU_CMD="$(dirname "$0")/vmenu"
+elif [[ -x "./build/vmenu" ]]; then
+    VMENU_CMD="./build/vmenu"
+else
+    VMENU_CMD="vmenu"
+fi
+
+# Output categories list
+CATEGORIES=(
+    "Maths symbols"
+    "Currency Symbols"
+    "Box-drawing"
+    "Arrows"
+    "Superscripts and Subscripts"
+    "General Punctuation"
+    "Latin-1 supplement & Latin Extended A-B-Additional"
+    "Greek"
+    "Greek Extended and Coptic"
+    "Spacing Modifier Letters"
+    "Cyrillic"
+    "Number Forms"
+    "Miscellaneous Technical"
+    "Geometric Shapes"
+    "Miscellaneous Symbols"
+)
+
+CATEGORIES_LIST=$(printf "%s\n" "${CATEGORIES[@]}")
+
+# Category selection menu options
+VMENU_CAT_ARGS=("${VMENU_ARGS[@]}")
+HAS_PROMPT=0
+for arg in "${VMENU_CAT_ARGS[@]}"; do
+    if [[ "$arg" == "-p" || "$arg" == "--prompt" ]]; then
+        HAS_PROMPT=1
+        break
+    fi
+done
+if [[ $HAS_PROMPT -eq 0 ]]; then
+    VMENU_CAT_ARGS+=("-p" "Category:")
+fi
+
+HAS_LAYOUT=0
+for arg in "${VMENU_CAT_ARGS[@]}"; do
+    if [[ "$arg" == "-c" || "$arg" == "--centered" || "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
+        HAS_LAYOUT=1
+        break
+    fi
+done
+if [[ $HAS_LAYOUT -eq 0 ]]; then
+    VMENU_CAT_ARGS+=("-c" "-l" "15")
+fi
+
+SELECTED_CAT=$(echo "$CATEGORIES_LIST" | "$VMENU_CMD" "${VMENU_CAT_ARGS[@]}")
+
+if [[ -z "$SELECTED_CAT" ]]; then
+    exit 0
+fi
+
+# Filter symbols for the selected category
+SYMBOLS_LIST=$(grep "^$SELECTED_CAT|" "$CACHE_FILE" | cut -d'|' -f2,3 | tr '|' '\t')
+
+if [[ -z "$SYMBOLS_LIST" ]]; then
+    echo "Error: No symbols found for category '$SELECTED_CAT'." >&2
+    exit 1
+fi
+
+VMENU_SYM_ARGS=("${VMENU_ARGS[@]}")
+NEW_SYM_ARGS=()
+skip_next=0
+for ((i=0; i<${#VMENU_SYM_ARGS[@]}; i++)); do
+    if [[ $skip_next -eq 1 ]]; then
+        skip_next=0
+        continue
+    fi
+    arg="${VMENU_SYM_ARGS[i]}"
+    if [[ "$arg" == "-p" || "$arg" == "--prompt" ]]; then
+        skip_next=1
+        continue
+    fi
+    NEW_SYM_ARGS+=("$arg")
+done
+NEW_SYM_ARGS+=("-p" "$SELECTED_CAT:")
+
+HAS_SYM_LAYOUT=0
+for arg in "${NEW_SYM_ARGS[@]}"; do
+    if [[ "$arg" == "-c" || "$arg" == "--centered" || "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
+        HAS_SYM_LAYOUT=1
+        break
+    fi
+done
+if [[ $HAS_SYM_LAYOUT -eq 0 ]]; then
+    NEW_SYM_ARGS+=("-c" "-l" "12" "-G" "5")
+fi
+
+SELECTED_SYM=$(echo "$SYMBOLS_LIST" | "$VMENU_CMD" "${NEW_SYM_ARGS[@]}")
+
+if [[ -z "$SELECTED_SYM" ]]; then
+    exit 0
+fi
+
+# Extract the character (first field before tab)
+SYMBOL=$(echo "$SELECTED_SYM" | cut -f1)
+
+if [[ -z "$SYMBOL" ]]; then
+    exit 1
+fi
+
+copy_to_clipboard() {
+    local val="$1"
+    if command -v wl-copy >/dev/null 2>&1; then
+        printf "%s" "$val" | wl-copy
+    elif command -v xclip >/dev/null 2>&1; then
+        printf "%s" "$val" | xclip -selection clipboard
+    elif command -v xsel >/dev/null 2>&1; then
+        printf "%s" "$val" | xsel -b
+    else
+        printf "%s" "$val"
+        echo -e "\nWarning: No clipboard tool (wl-copy, xclip, xsel) found. Printed to stdout." >&2
+        return 1
+    fi
+}
+
+type_symbol() {
+    local val="$1"
+    if command -v xdotool >/dev/null 2>&1; then
+        xdotool type --delay 100 "$val"
+    elif command -v wtype >/dev/null 2>&1; then
+        wtype "$val"
+    else
+        echo "Warning: xdotool or wtype not found. Cannot type symbol." >&2
+        return 1
+    fi
+}
+
+if [[ "$ACTION" == "copy" ]]; then
+    copy_to_clipboard "$SYMBOL"
+    if [[ $NO_NOTIFY -eq 0 ]]; then
+        if command -v notify-send >/dev/null 2>&1; then
+            notify-send "Symbol Copied" "Copied '$SYMBOL' to clipboard" -i character-layout
+        fi
+    fi
+else
+    type_symbol "$SYMBOL"
+fi

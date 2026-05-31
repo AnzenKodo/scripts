@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Description: Upload text or files to paste.c-net.org pastebin service.
+
+# Exit on error or pipeline failure
+set -euo pipefail
+
+url='https://paste.c-net.org/'
+
+if (( $# )); then
+    for file; do
+        curl -s \
+            --data-binary @"$file" \
+            --header "X-FileName: ${file##*/}" \
+            "$url"
+    done
+else
+    curl -s --data-binary @- "$url"
+fi

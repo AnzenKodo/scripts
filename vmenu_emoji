@@ -1,1 +1,202 @@
-/home/ramen/Applications/vmenu/scripts/vmenu_emoji
+#!/usr/bin/env bash
+# Description: An emoji picker utility using vmenu that allows copying or typing emojis.
+
+# Cache configuration
+CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/vmenu"
+CACHE_FILE="$CACHE_DIR/emojis.txt"
+
+# Default options
+ACTION="copy" # copy or type
+NO_NOTIFY=0
+
+# Help message
+show_help() {
+    cat <<EOF
+Usage: vmenu_emoji [options] [-- [vmenu options]]
+
+An emoji picker script using vmenu.
+
+Options:
+  -u, --update      Download and update the local emoji database.
+  -t, --type        Type the selected emoji directly using xdotool/wtype instead of copying.
+  -c, --copy        Copy the selected emoji to clipboard (default).
+  -n, --no-notify   Do not show a desktop notification after selection.
+  -h, --help        Show this help message.
+
+Any options after -- are passed directly to vmenu.
+EOF
+}
+
+# Download and parse emojis from unicode.org
+download_emojis() {
+    local url="https://unicode.org/Public/emoji/15.0/emoji-test.txt"
+    local temp_file
+    temp_file=$(mktemp)
+
+    echo "Downloading emojis from unicode.org..." >&2
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -sSL "$url" -o "$temp_file"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$temp_file" "$url"
+    else
+        echo "Error: curl or wget is required to download emojis." >&2
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    if [[ ! -s "$temp_file" ]]; then
+        echo "Error: Failed to download emoji database (empty file)." >&2
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    # Parse and save to the cache file
+    mkdir -p "$(dirname "$CACHE_FILE")"
+    sed -n '/; fully-qualified/s/^.*# \([^ ]*\) E[0-9.]* \(.*\)/\1 \2/p' "$temp_file" > "$CACHE_FILE"
+    rm -f "$temp_file"
+
+    if [[ ! -s "$CACHE_FILE" ]]; then
+        echo "Error: Failed to parse emojis or output is empty." >&2
+        return 1
+    fi
+
+    echo "Emoji database updated successfully at $CACHE_FILE" >&2
+    return 0
+}
+
+# Parse command-line options
+VMENU_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -u|--update)
+            download_emojis
+            exit $?
+            ;;
+        -t|--type)
+            ACTION="type"
+            shift
+            ;;
+        -c|--copy)
+            ACTION="copy"
+            shift
+            ;;
+        -n|--no-notify)
+            NO_NOTIFY=1
+            shift
+            ;;
+        --)
+            shift
+            VMENU_ARGS+=("$@")
+            break
+            ;;
+        *)
+            VMENU_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Check if cache file exists, if not download it
+if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]]; then
+    download_emojis
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Local emoji database is missing and download failed." >&2
+        exit 1
+    fi
+fi
+
+# Check if vmenu is installed or in PATH; otherwise look in relative locations
+if command -v vmenu >/dev/null 2>&1; then
+    VMENU_CMD="vmenu"
+elif [[ -x "$(dirname "$0")/vmenu" ]]; then
+    VMENU_CMD="$(dirname "$0")/vmenu"
+elif [[ -x "./build/vmenu" ]]; then
+    VMENU_CMD="./build/vmenu"
+else
+    VMENU_CMD="vmenu"
+fi
+
+# Run vmenu with the emoji list
+# If no prompt is specified in VMENU_ARGS, add a default prompt
+HAS_PROMPT=0
+for arg in "${VMENU_ARGS[@]}"; do
+    if [[ "$arg" == "-p" || "$arg" == "--prompt" ]]; then
+        HAS_PROMPT=1
+        break
+    fi
+done
+
+if [[ $HAS_PROMPT -eq 0 ]]; then
+    VMENU_ARGS+=("-p" "Emoji:")
+fi
+
+# Default layout: centered menu with 10 lines and 5 columns (grid)
+HAS_LAYOUT=0
+for arg in "${VMENU_ARGS[@]}"; do
+    if [[ "$arg" == "-c" || "$arg" == "--centered" || "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
+        HAS_LAYOUT=1
+        break
+    fi
+done
+
+if [[ $HAS_LAYOUT -eq 0 ]]; then
+    VMENU_ARGS+=("-c" "-l" "10" "-G" "5")
+fi
+
+copy_to_clipboard() {
+    local val="$1"
+    if command -v wl-copy >/dev/null 2>&1; then
+        printf "%s" "$val" | wl-copy
+    elif command -v xclip >/dev/null 2>&1; then
+        printf "%s" "$val" | xclip -selection clipboard
+    elif command -v xsel >/dev/null 2>&1; then
+        printf "%s" "$val" | xsel -b
+    else
+        printf "%s" "$val"
+        echo -e "\nWarning: No clipboard tool (wl-copy, xclip, xsel) found. Printed to stdout." >&2
+        return 1
+    fi
+}
+
+type_emoji() {
+    local val="$1"
+    if command -v xdotool >/dev/null 2>&1; then
+        xdotool type --delay 100 "$val"
+    elif command -v wtype >/dev/null 2>&1; then
+        wtype "$val"
+    else
+        echo "Warning: xdotool or wtype not found. Cannot type emoji." >&2
+        return 1
+    fi
+}
+
+# Output selected line from vmenu
+SELECTED=$("$VMENU_CMD" "${VMENU_ARGS[@]}" < "$CACHE_FILE")
+
+# If nothing was selected or user cancelled, exit
+if [[ -z "$SELECTED" ]]; then
+    exit 0
+fi
+
+# Extract only the emoji (first space-separated token)
+EMOJI=$(echo "$SELECTED" | cut -d' ' -f1)
+
+if [[ -z "$EMOJI" ]]; then
+    exit 1
+fi
+
+if [[ "$ACTION" == "copy" ]]; then
+    copy_to_clipboard "$EMOJI"
+    if [[ $NO_NOTIFY -eq 0 ]]; then
+        if command -v notify-send >/dev/null 2>&1; then
+            notify-send "Emoji Copied" "Copied $EMOJI to clipboard" -i face-smile
+        fi
+    fi
+else
+    type_emoji "$EMOJI"
+fi

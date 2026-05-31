@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# Description: A media compression script that scales and compresses videos, audio, and images using ffmpeg.
+
+# Exit on error or pipeline failure
+set -euo pipefail
+
+# Display usage instructions
+usage() {
+    echo "Usage:"
+    echo "  compress <input-file> [output-file] [options]"
+    echo ""
+    echo "Options:"
+    echo "  -t, --type <video|audio|image>   Force media type (auto-detects if omitted)"
+    echo "  -q, --quality <high|med|low>     Compression quality level (default: med)"
+    echo "  -s, --scale <w:h>                Scale size (e.g., 1280:720, 800:-1)"
+    echo "  --hevc                           Use HEVC/H.265 for video compression (smaller size)"
+    echo "  -h, --help                       Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  compress input.mp4"
+    echo "  compress input.jpg output.webp -q low"
+    echo "  compress input.mp4 output.mp4 --hevc -s 1280:720"
+    exit 1
+}
+
+# Check if ffmpeg is installed
+if ! command -v ffmpeg &> /dev/null; then
+    echo "Error: ffmpeg is required but not installed." >&2
+    exit 1
+fi
+
+INPUT=""
+OUTPUT=""
+TYPE=""
+QUALITY="med"
+SCALE=""
+USE_HEVC=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            ;;
+        -t|--type)
+            TYPE="$2"
+            shift 2
+            ;;
+        -q|--quality)
+            QUALITY="$2"
+            shift 2
+            ;;
+        -s|--scale)
+            SCALE="$2"
+            shift 2
+            ;;
+        --hevc)
+            USE_HEVC=true
+            shift
+            ;;
+        -*)
+            echo "Error: Unknown option $1" >&2
+            usage
+            ;;
+        *)
+            if [ -z "$INPUT" ]; then
+                INPUT="$1"
+            elif [ -z "$OUTPUT" ]; then
+                OUTPUT="$1"
+            else
+                echo "Error: Too many arguments." >&2
+                usage
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$INPUT" ]; then
+    echo "Error: Input file is required." >&2
+    usage
+fi
+
+if [ ! -f "$INPUT" ]; then
+    echo "Error: Input file '$INPUT' does not exist." >&2
+    exit 1
+fi
+
+# Detect type from extension if not specified
+if [ -z "$TYPE" ]; then
+    filename=$(basename "$INPUT")
+    ext="${filename##*.}"
+    ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+
+    case "$ext" in
+        mp4|mkv|avi|mov|webm|flv|wmv|m4v|3gp)
+            TYPE="video"
+            ;;
+        mp3|wav|m4a|ogg|opus|flac|aac|wma)
+            TYPE="audio"
+            ;;
+        jpg|jpeg|png|webp|bmp|tiff|gif)
+            TYPE="image"
+            ;;
+        *)
+            echo "Error: Could not auto-detect media type from extension: .$ext" >&2
+            echo "Please specify type manually with -t/--type." >&2
+            exit 1
+            ;;
+    esac
+fi
+
+# Generate default output name if not specified
+if [ -z "$OUTPUT" ]; then
+    dir=$(dirname "$INPUT")
+    base=$(basename "$INPUT")
+    name="${base%.*}"
+    ext="${base##*.}"
+    OUTPUT="$dir/${name}_compressed.$ext"
+fi
+
+echo "Input  : $INPUT"
+echo "Output : $OUTPUT"
+echo "Type   : $TYPE"
+echo "Quality: $QUALITY"
+if [ -n "$SCALE" ]; then
+    echo "Scale  : $SCALE"
+fi
+echo "Compressing..."
+
+case "$TYPE" in
+    video)
+        # Determine CRF and Preset based on quality
+        vcodec="libx264"
+        crf="23"
+        if [ "$USE_HEVC" = true ]; then
+            vcodec="libx265"
+            case "$QUALITY" in
+                high) crf="24" ;;
+                med)  crf="28" ;;
+                low)  crf="32" ;;
+            esac
+        else
+            case "$QUALITY" in
+                high) crf="19" ;;
+                med)  crf="23" ;;
+                low)  crf="28" ;;
+            esac
+        fi
+
+        # Scaler filter
+        scale_filter=""
+        if [ -n "$SCALE" ]; then
+            scale_filter="-vf scale=$SCALE"
+        fi
+
+        # Execute ffmpeg for video
+        ffmpeg -y -i "$INPUT" \
+            -vcodec "$vcodec" -crf "$crf" -preset medium \
+            -acodec aac -b:a 128k \
+            ${scale_filter:+ $scale_filter} \
+            "$OUTPUT"
+        ;;
+
+    audio)
+        ab="128k"
+        case "$QUALITY" in
+            high) ab="192k" ;;
+            med)  ab="128k" ;;
+            low)  ab="64k"  ;;
+        esac
+
+        # Select codec based on output extension
+        out_filename=$(basename "$OUTPUT")
+        out_ext="${out_filename##*.}"
+        out_ext=$(echo "$out_ext" | tr '[:upper:]' '[:lower:]')
+
+        acodec="aac"
+        case "$out_ext" in
+            mp3) acodec="libmp3lame" ;;
+            opus) acodec="libopus" ;;
+            ogg) acodec="libvorbis" ;;
+            m4a) acodec="aac" ;;
+        esac
+
+        # Execute ffmpeg for audio
+        ffmpeg -y -i "$INPUT" -acodec "$acodec" -b:a "$ab" "$OUTPUT"
+        ;;
+
+    image)
+        out_filename=$(basename "$OUTPUT")
+        out_ext="${out_filename##*.}"
+        out_ext=$(echo "$out_ext" | tr '[:upper:]' '[:lower:]')
+
+        scale_filter=""
+        if [ -n "$SCALE" ]; then
+            scale_filter="-vf scale=$SCALE"
+        fi
+
+        if [ "$out_ext" = "webp" ]; then
+            q="75"
+            case "$QUALITY" in
+                high) q="85" ;;
+                med)  q="70" ;;
+                low)  q="50" ;;
+            esac
+            # Execute ffmpeg for webp
+            ffmpeg -y -i "$INPUT" ${scale_filter:+ $scale_filter} -quality "$q" "$OUTPUT"
+        elif [ "$out_ext" = "png" ]; then
+            q="5"
+            case "$QUALITY" in
+                high) q="3" ;;
+                med)  q="6" ;;
+                low)  q="9" ;;
+            esac
+            # Execute ffmpeg for png (compression level 0-9)
+            ffmpeg -y -i "$INPUT" ${scale_filter:+ $scale_filter} -compression_level "$q" "$OUTPUT"
+        else
+            q="6"
+            case "$QUALITY" in
+                high) q="3" ;;
+                med)  q="6" ;;
+                low)  q="12" ;;
+            esac
+            # Execute ffmpeg for jpg
+            ffmpeg -y -i "$INPUT" ${scale_filter:+ $scale_filter} -q:v "$q" "$OUTPUT"
+        fi
+        ;;
+esac
+
+echo "Success: Compression complete. Saved to '$OUTPUT'"
