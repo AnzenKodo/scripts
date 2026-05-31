@@ -7,33 +7,33 @@ CACHE_FILE="$CACHE_DIR/kaomojis.txt"
 
 # Default options
 ACTION="copy" # copy or type
-NO_NOTIFY=0
+NO_NOTIFY=1
 
 # Help message
 show_help() {
     cat <<EOF
 Usage: vmenu_kaomoji [options] [-- [vmenu options]]
 
-A Kaomoji picker script using vmenu.
+An Kaomoji picker script using vmenu.
 
 Options:
   -u, --update      Download and update the local Kaomoji database.
   -t, --type        Type the selected Kaomoji directly using xdotool/wtype instead of copying.
   -c, --copy        Copy the selected Kaomoji to clipboard (default).
-  -n, --no-notify   Do not show a desktop notification after selection.
+  -n, --notify      Show a desktop notification after selection.
   -h, --help        Show this help message.
 
 Any options after -- are passed directly to vmenu.
 EOF
 }
 
-# Download Kaomojis
+# Download and parse Kaomojis from crllect/Kaomoji-Dump markdown database
 download_kaomojis() {
-    local url="https://raw.githubusercontent.com/crllect/Kaomoji-Dump/main/kaomojis_one_per_line.txt"
+    local url="https://raw.githubusercontent.com/crllect/Kaomoji-Dump/main/kaomojis_markdown%20(2).md"
     local temp_file
     temp_file=$(mktemp)
 
-    echo "Downloading Kaomojis..." >&2
+    echo "Downloading and parsing Kaomojis..." >&2
 
     if command -v curl >/dev/null 2>&1; then
         curl -sSL "$url" -o "$temp_file"
@@ -51,9 +51,29 @@ download_kaomojis() {
         return 1
     fi
 
-    # Clean and save to the cache file (removing comments or empty lines if any)
+    # Parse and save to the cache file (format: kaomoji <space> │ <space> category)
     mkdir -p "$(dirname "$CACHE_FILE")"
-    grep -v '^#' "$temp_file" | grep -v '^$' > "$CACHE_FILE"
+    python3 - "$temp_file" "$CACHE_FILE" <<'EOF'
+import sys
+temp_path = sys.argv[1]
+cache_path = sys.argv[2]
+
+current_category = "Unknown"
+with open(temp_path, "r", encoding="utf-8") as infile, open(cache_path, "w", encoding="utf-8") as outfile:
+    for line in infile:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            current_category = line.lstrip("#").strip()
+        elif "`" in line:
+            start = line.find("`")
+            end = line.rfind("`")
+            if start != -1 and end != -1 and start < end:
+                kaomoji = line[start+1:end]
+                outfile.write(f"{kaomoji} │ {current_category}\n")
+EOF
+
     rm -f "$temp_file"
 
     if [[ ! -s "$CACHE_FILE" ]]; then
@@ -85,8 +105,8 @@ while [[ $# -gt 0 ]]; do
             ACTION="copy"
             shift
             ;;
-        -n|--no-notify)
-            NO_NOTIFY=1
+        -n|--notify)
+            NO_NOTIFY=0
             shift
             ;;
         --)
@@ -101,8 +121,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if cache file exists, if not download it
-if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]]; then
+# Check if cache file exists and has the correct format, if not download it
+if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]] || ! grep -q ' │ ' "$CACHE_FILE"; then
     download_kaomojis
     if [[ $? -ne 0 ]]; then
         echo "Error: Local Kaomoji database is missing and download failed." >&2
@@ -110,9 +130,13 @@ if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]]; then
     fi
 fi
 
-# Check if vmenu is installed or in PATH; otherwise look in relative locations
+# Check if vmenu is installed or in PATH; otherwise look in local/relative locations
 if command -v vmenu >/dev/null 2>&1; then
     VMENU_CMD="vmenu"
+elif [[ -x "$HOME/Applications/bin/vmenu" ]]; then
+    VMENU_CMD="$HOME/Applications/bin/vmenu"
+elif [[ -x "$HOME/.local/bin/vmenu" ]]; then
+    VMENU_CMD="$HOME/.local/bin/vmenu"
 elif [[ -x "$(dirname "$0")/vmenu" ]]; then
     VMENU_CMD="$(dirname "$0")/vmenu"
 elif [[ -x "./build/vmenu" ]]; then
@@ -183,13 +207,20 @@ if [[ -z "$SELECTED" ]]; then
     exit 0
 fi
 
+# Extract only the Kaomoji (everything before ' │ ')
+KAOMOJI="${SELECTED%% │ *}"
+
+if [[ -z "$KAOMOJI" ]]; then
+    exit 1
+fi
+
 if [[ "$ACTION" == "copy" ]]; then
-    copy_to_clipboard "$SELECTED"
+    copy_to_clipboard "$KAOMOJI"
     if [[ $NO_NOTIFY -eq 0 ]]; then
         if command -v notify-send >/dev/null 2>&1; then
-            notify-send "Kaomoji Copied" "Copied $SELECTED to clipboard" -i face-smile
+            notify-send "Kaomoji Copied" "Copied $KAOMOJI to clipboard" -i face-smile
         fi
     fi
 else
-    type_emoji "$SELECTED"
+    type_emoji "$KAOMOJI"
 fi

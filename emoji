@@ -7,7 +7,7 @@ CACHE_FILE="$CACHE_DIR/emojis.txt"
 
 # Default options
 ACTION="copy" # copy or type
-NO_NOTIFY=0
+NO_NOTIFY=1
 
 # Help message
 show_help() {
@@ -20,7 +20,7 @@ Options:
   -u, --update      Download and update the local emoji database.
   -t, --type        Type the selected emoji directly using xdotool/wtype instead of copying.
   -c, --copy        Copy the selected emoji to clipboard (default).
-  -n, --no-notify   Do not show a desktop notification after selection.
+  -n, --notify      Show a desktop notification after selection.
   -h, --help        Show this help message.
 
 Any options after -- are passed directly to vmenu.
@@ -85,8 +85,8 @@ while [[ $# -gt 0 ]]; do
             ACTION="copy"
             shift
             ;;
-        -n|--no-notify)
-            NO_NOTIFY=1
+        -n|--notify)
+            NO_NOTIFY=0
             shift
             ;;
         --)
@@ -110,9 +110,13 @@ if [[ ! -f "$CACHE_FILE" || ! -s "$CACHE_FILE" ]]; then
     fi
 fi
 
-# Check if vmenu is installed or in PATH; otherwise look in relative locations
+# Check if vmenu is installed or in PATH; otherwise look in local/relative locations
 if command -v vmenu >/dev/null 2>&1; then
     VMENU_CMD="vmenu"
+elif [[ -x "$HOME/Applications/bin/vmenu" ]]; then
+    VMENU_CMD="$HOME/Applications/bin/vmenu"
+elif [[ -x "$HOME/.local/bin/vmenu" ]]; then
+    VMENU_CMD="$HOME/.local/bin/vmenu"
 elif [[ -x "$(dirname "$0")/vmenu" ]]; then
     VMENU_CMD="$(dirname "$0")/vmenu"
 elif [[ -x "./build/vmenu" ]]; then
@@ -138,14 +142,14 @@ fi
 # Default layout: centered menu with 10 lines and 5 columns (grid)
 HAS_LAYOUT=0
 for arg in "${VMENU_ARGS[@]}"; do
-    if [[ "$arg" == "-c" || "$arg" == "--centered" || "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
+    if [[ "$arg" == "-l" || "$arg" == "--lines" || "$arg" == "-G" || "$arg" == "--columns" ]]; then
         HAS_LAYOUT=1
         break
     fi
 done
 
 if [[ $HAS_LAYOUT -eq 0 ]]; then
-    VMENU_ARGS+=("-c" "-l" "10" "-G" "5")
+    VMENU_ARGS+=("-l" "20" "-G" "5" "-W" "2000")
 fi
 
 copy_to_clipboard() {

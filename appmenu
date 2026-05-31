@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# Description: An application launcher menu using vmenu.
+# It reads application names and executable paths from a baked-in APPS array.
+
+# Define your apps array here.
+# Format: [ <appname>, <executable path> ]
+APPS=(
+    "[ Terminal,     ~/Applications/AppImages/wezterm ]"
+    "[ Browser,      ~/Applications/AppImages/brave ]"
+    "[ File Manager, xdg-open . ]"
+    "[ Settings,     xfce4-settings-manager ]"
+)
+
+# Helper function to trim leading and trailing whitespace
+trim() {
+    local var="$*"
+    var="${var#"${var%%[![:space:]]*}"}"
+    var="${var%"${var##*[![:space:]]}"}"
+    printf '%s' "$var"
+}
+
+# Check if vmenu is installed or in PATH; otherwise look in local/relative locations
+if command -v vmenu >/dev/null 2>&1; then
+    VMENU_CMD="vmenu"
+elif [[ -x "$HOME/Applications/bin/vmenu" ]]; then
+    VMENU_CMD="$HOME/Applications/bin/vmenu"
+elif [[ -x "$HOME/.local/bin/vmenu" ]]; then
+    VMENU_CMD="$HOME/.local/bin/vmenu"
+elif [[ -x "$(dirname "$0")/vmenu" ]]; then
+    VMENU_CMD="$(dirname "$0")/vmenu"
+elif [[ -x "./build/vmenu" ]]; then
+    VMENU_CMD="./build/vmenu"
+else
+    VMENU_CMD="vmenu"
+fi
+
+# Parse the APPS array
+declare -A app_map
+declare -a app_names
+
+for entry in "${APPS[@]}"; do
+    # Remove the surrounding square brackets
+    temp="${entry#\[}"
+    temp="${temp%\]}"
+    temp=$(trim "$temp")
+    
+    # Extract the app name (everything before the first comma)
+    name=$(trim "${temp%%,*}")
+    
+    # Extract the command (everything after the first comma)
+    cmd=$(trim "${temp#*,}")
+    
+    if [[ -n "$name" && -n "$cmd" ]]; then
+        app_names+=("$name")
+        app_map["$name"]="$cmd"
+    fi
+done
+
+# If no apps are defined, exit
+if [[ ${#app_names[@]} -eq 0 ]]; then
+    echo "Error: No apps defined in the APPS array." >&2
+    exit 1
+fi
+
+# Default options
+NO_NOTIFY=1
+
+# Help message
+show_help() {
+    cat <<EOF
+Usage: vmenu_appmenu [options] [-- [vmenu options]]
+
+An application launcher menu using vmenu.
+
+Options:
+  -n, --notify      Show a desktop notification after selecting/launching an app.
+  -h, --help        Show this help message.
+
+Any options after -- are passed directly to vmenu.
+EOF
+}
+
+# Parse command-line options
+VMENU_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -n|--notify)
+            NO_NOTIFY=0
+            shift
+            ;;
+        --)
+            shift
+            VMENU_ARGS+=("$@")
+            break
+            ;;
+        *)
+            VMENU_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+HAS_PROMPT=0
+HAS_LAYOUT=0
+
+for arg in "${VMENU_ARGS[@]}"; do
+    if [[ "$arg" == "-p" || "$arg" == "--prompt" ]]; then
+        HAS_PROMPT=1
+    fi
+    if [[ "$arg" == "-l" || "$arg" == "--lines" ]]; then
+        HAS_LAYOUT=1
+    fi
+done
+
+if [[ $HAS_PROMPT -eq 0 ]]; then
+    VMENU_ARGS+=("-p" "Apps:")
+fi
+
+if [[ $HAS_LAYOUT -eq 0 ]]; then
+    VMENU_ARGS+=("-l" "${#app_names[@]}")
+fi
+
+# Generate the menu choices (newline-separated names)
+CHOICES=""
+for name in "${app_names[@]}"; do
+    CHOICES+="$name"$'\n'
+done
+
+# Run vmenu
+SELECTED=$(echo -n "$CHOICES" | "$VMENU_CMD" "${VMENU_ARGS[@]}")
+
+# Exit if no selection
+if [[ -z "$SELECTED" ]]; then
+    exit 0
+fi
+
+# Retrieve the execution command
+EXE_CMD="${app_map[$SELECTED]}"
+
+if [[ -z "$EXE_CMD" ]]; then
+    echo "Error: Command not found for selection: $SELECTED" >&2
+    exit 1
+fi
+
+# Show notification if requested
+if [[ $NO_NOTIFY -eq 0 ]]; then
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send "Launching Application" "Starting $SELECTED..." -i system-run
+    fi
+fi
+
+# Launch the application in the background
+eval "$EXE_CMD" >/dev/null 2>&1 &
+disown
+
+exit 0
