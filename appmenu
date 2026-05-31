@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Description: An application launcher menu using vmenu.
-# It reads application names and executable paths from a baked-in APPS array.
 
 # Define your apps array here.
 # Format: [ <appname>, <executable path> ]

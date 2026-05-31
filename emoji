@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Description: An emoji picker utility using vmenu that allows copying or typing emojis.
 
 # Cache configuration
 CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/vmenu"

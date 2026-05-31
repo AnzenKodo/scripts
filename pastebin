@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Description: Upload text or files to paste.c-net.org pastebin service.
 
 # Exit on error or pipeline failure
 set -euo pipefail

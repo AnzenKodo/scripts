@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Description: A unified archive manager to easily compress and extract zip, tar, rar, 7z, and more.
 
 # Exit on error or pipeline failure
 set -euo pipefail

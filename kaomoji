@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Description: A kaomoji picker utility using vmenu that allows copying or typing kaomojis.
 
 # Cache configuration
 CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/vmenu"

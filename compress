@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Description: A media compression script that scales and compresses videos, audio, and images using ffmpeg.
 
 # Exit on error or pipeline failure
 set -euo pipefail

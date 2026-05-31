@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Description: A Unicode character and symbol picker utility using vmenu.
 
 # Cache configuration
 CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/vmenu"
