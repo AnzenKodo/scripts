@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+# Exit on error, undefined variable, or pipeline failure
+set -euo pipefail
+
+# Define your apps array here.
+# Format: [ <appname>, <location to download>, <download command> ]
+APPS=(
+  "[ example, /tmp, curl -L -s https://example.com ]"
+)
+
+# Helper function to trim leading and trailing whitespace
+trim() {
+    local var="$*"
+    # Remove leading whitespace
+    var="${var#"${var%%[![:space:]]*}"}"
+    # Remove trailing whitespace
+    var="${var%"${var##*[![:space:]]}"}"
+    printf '%s' "$var"
+}
+
+# Display usage instructions and available apps
+usage() {
+    echo "Usage: pkgman get <appname>"
+    echo ""
+    echo "Available apps:"
+    if [ ${#APPS[@]} -eq 0 ]; then
+        echo "  (No apps defined in the APPS array)"
+    else
+        for entry in "${APPS[@]}"; do
+            # Extract app name for listing
+            local temp="${entry#\[}"
+            temp="${temp%\]}"
+            local name
+            name=$(trim "${temp%%,*}")
+            echo "  - $name"
+        done
+    fi
+    exit 1
+}
+
+# Validate arguments
+if [ $# -lt 2 ] || [ "$1" != "get" ]; then
+    usage
+fi
+
+TARGET_APP="$2"
+FOUND=0
+
+# Search for the requested app in the APPS array
+for entry in "${APPS[@]}"; do
+    # Remove the surrounding square brackets
+    temp="${entry#\[}"
+    temp="${temp%\]}"
+    temp=$(trim "$temp")
+    
+    # Extract the app name (everything before the first comma)
+    name=$(trim "${temp%%,*}")
+    
+    if [ "$name" = "$TARGET_APP" ]; then
+        FOUND=1
+        
+        # Get the rest of the string after the first comma
+        rest="${temp#*,}"
+        
+        # Extract the location to download (everything before the next comma)
+        loc=$(trim "${rest%%,*}")
+        
+        # Extract the download command (everything after the second comma)
+        cmd=$(trim "${rest#*,}")
+        
+        echo "App found: $name"
+        echo "Download location: $loc"
+        echo "Download command:  $cmd"
+        echo "Downloading..."
+        
+        # Ensure the destination directory exists
+        mkdir -p "$loc"
+        
+        # Run the command and redirect its standard output to the target file
+        if eval "$cmd" > "$loc/$name"; then
+            echo "Success: Saved '$name' to '$loc/$name'"
+        else
+            echo "Error: The download command failed." >&2
+            # Clean up the file if the download failed or was interrupted
+            rm -f "$loc/$name"
+            exit 1
+        fi
+        break
+    fi
+done
+
+if [ "$FOUND" -eq 0 ]; then
+    echo "Error: App '$TARGET_APP' not found." >&2
+    exit 1
+fi
