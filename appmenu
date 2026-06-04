@@ -5,7 +5,8 @@
 APPS=(
     "[ Terminal,     ~/Applications/AppImages/wezterm ]"
     "[ Browser,      ~/Applications/AppImages/brave ]"
-    "[ File Manager, xdg-open . ]"
+    "[ File Manager, exo-open --launch FileManager ]"
+    "[ Notes,      ~/Applications/AppImages/obsidian ]"
     "[ Settings,     xfce4-settings-manager ]"
 )
 
@@ -79,7 +80,7 @@ EOF
 }
 
 # Parse command-line options
-VMENU_ARGS=()
+VMENU_ARGS=("-sb" "#00AADE" "-bc" "#00AADE")
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
@@ -130,6 +131,7 @@ done
 
 # Run vmenu
 SELECTED=$(echo -n "$CHOICES" | "$VMENU_CMD" "${VMENU_ARGS[@]}")
+echo $SELECTED
 
 # Exit if no selection
 if [[ -z "$SELECTED" ]]; then
