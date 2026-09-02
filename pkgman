@@ -6,12 +6,17 @@
 
 # ─── COMMANDS ─────────────────────────────────────────────────────────────────
 declare -A COMMANDS=(
+    ["yt-dlp"]="yt-dlp --update"
+    ["rclone"]="rclone selfupdate --beta"
+    ["restic"]="restic self-update"
+    ["opencode"]="opencode upgrade -m curl"
+    ["agy"]="agy update"
     ["appimageupdatetool"]="appimageupdatetool --self-update"
     ["brave"]="appimageupdatetool --overwrite ~/Applications/AppImages/brave"
     ["keepassxc"]="appimageupdatetool --overwrite ~/Applications/AppImages/keepassxc"
     ["nvim"]="appimageupdatetool --overwrite ~/Applications/AppImages/nvim"
-    ["wezterm"]="appimageupdatetool --overwrite ~/Applications/AppImages/wezterm"
     ["vscode"]="appimageupdatetool --overwrite ~/Applications/AppImages/vscode"
+    ["vlc"]="appimageupdatetool --overwrite ~/Applications/AppImages/vlc"
 )
 # ──────────────────────────────────────────────────────────────────────────────
 
