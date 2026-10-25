@@ -8,7 +8,9 @@ APPS=(
     "[ File Manager,        exo-open --launch FileManager      ]"
     "[ Notes,               ~/Applications/AppImages/obsidian  ]"
     "[ Password Manager,    ~/Applications/AppImages/keepassxc ]"
-    "[ Debugger,            ~/Applications/AppImages/vscode    ]"
+    "[ Debugger,            ~/Applications/bin/raddbg          ]"
+    "[ Photo Editor,        ~/Applications/AppImages/gimp      ]"
+    "[ Video Editor,        ~/Applications/AppImages/kdenlive  ]"
     "[ Settings,            xfce4-settings-manager             ]"
 )
 
